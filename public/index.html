@@ -1,0 +1,140 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nebula AI</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+  <div class="app-shell">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">✦</div>
+        <span>Nebula</span>
+      </div>
+
+      <button id="newChat" class="new-chat">
+        <span>＋</span> New chat
+      </button>
+
+      <div class="sidebar-label">YOUR SPACE</div>
+
+      <div class="history-item">
+        <span>◈</span> Your conversations
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="profile">
+          <div class="profile-avatar">N</div>
+          <div>
+            <strong>Nebula AI</strong>
+            <small>Personal assistant</small>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main chat -->
+    <main class="chat-main">
+
+      <header class="topbar">
+        <div class="topbar-title">
+          <span class="mobile-brand">✦</span>
+          <span>AI Workspace</span>
+          <span class="online-dot"></span>
+        </div>
+
+        <div class="model-area">
+          <span class="model-label">MODEL</span>
+          <select id="modelSelect">
+            <option>Loading models...</option>
+          </select>
+        </div>
+      </header>
+
+      <!-- Messages -->
+      <section id="messages" class="messages">
+        <div class="welcome">
+          <div class="orb">
+            <div class="orb-core"></div>
+          </div>
+
+          <div class="welcome-tag">YOUR COGNITIVE CO-PILOT</div>
+
+          <h1>Welcome to your <span>universe.</span></h1>
+
+          <p>
+            Think, create, plan, and explore ideas with your personal AI.
+          </p>
+
+          <div class="suggestions">
+            <button class="suggestion-card" data-prompt="Explain how code works in simple terms">
+              <span class="suggestion-icon">⌘</span>
+              <strong>Explain the Code</strong>
+              <small>Understand something new, one step at a time.</small>
+            </button>
+
+            <button class="suggestion-card" data-prompt="Help me make a plan for my next project">
+              <span class="suggestion-icon">◷</span>
+              <strong>Plan a Project</strong>
+              <small>Turn your ideas into a clear plan.</small>
+            </button>
+
+            <button class="suggestion-card" data-prompt="Give me creative ideas for a website">
+              <span class="suggestion-icon">✧</span>
+              <strong>Brainstorm Ideas</strong>
+              <small>Discover fresh possibilities.</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Composer -->
+      <div class="composer-area">
+        <form id="chatForm" class="composer">
+          <textarea
+            id="prompt"
+            placeholder="Ask anything, or share an idea..."
+            rows="1"
+            required
+          ></textarea>
+
+          <div class="composer-bottom">
+            <div class="composer-tools">
+              <span class="tool-chip">✦ <span>AI Chat</span></span>
+              <span class="tool-chip">◉ <span>Local model</span></span>
+            </div>
+
+            <button type="submit" class="send-button" aria-label="Send message">
+              <span>↑</span>
+            </button>
+          </div>
+        </form>
+
+        <div id="status" class="status">
+          Your AI runs locally on your device.
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+
+  <script>
+    // Suggestion cards fill the prompt and send it.
+    document.querySelectorAll(".suggestion-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        const prompt = document.getElementById("prompt");
+        prompt.value = card.dataset.prompt;
+        prompt.focus();
+      });
+    });
+  </script>
+</body>
+</html>
