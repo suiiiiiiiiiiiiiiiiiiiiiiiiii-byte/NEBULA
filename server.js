@@ -4,8 +4,9 @@ const fs = require("fs");
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
-const GEMINI_API_KEY = process.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
+
 const PUBLIC_DIR = path.join(__dirname, "public");
 
 const MIME_TYPES = {
@@ -78,13 +79,13 @@ async function handleChat(req, res) {
         return message && typeof message.content === "string";
       })
       .map((message) => {
-        const role =
-          message.role === "assistant" ? "model" : "user";
-
         if (message.role === "system") {
           systemText += message.content + "\n";
           return null;
         }
+
+        const role =
+          message.role === "assistant" ? "model" : "user";
 
         return {
           role,
@@ -157,8 +158,6 @@ async function handleChat(req, res) {
       done: true
     };
 
-    // If the frontend requests streaming, send one
-    // Ollama-compatible NDJSON response line.
     if (body.stream !== false) {
       res.writeHead(200, {
         "Content-Type": "application/x-ndjson; charset=utf-8"
@@ -203,8 +202,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Provide a Gemini model list in the format
-  // expected by the existing Nebula frontend.
+  // Gemini model list
   if (url.pathname === "/api/models" && req.method === "GET") {
     sendJson(res, 200, {
       models: [
@@ -214,7 +212,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Gemini chat endpoint
+  // Gemini chat
   if (url.pathname === "/api/chat" && req.method === "POST") {
     handleChat(req, res);
     return;
