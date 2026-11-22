@@ -4,9 +4,8 @@ const fs = require("fs");
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-2.5-flash";
-
+const GEMINI_API_KEY = process.
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
 const PUBLIC_DIR = path.join(__dirname, "public");
 
 const MIME_TYPES = {
