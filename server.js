@@ -4,7 +4,8 @@ const fs = require("fs");
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 
@@ -22,81 +23,176 @@ const MIME_TYPES = {
 
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*"
+    "Content-Type": "application/json; charset=utf-8"
   });
 
   res.end(JSON.stringify(data));
 }
 
-async function proxyToOllama(req, res, endpoint) {
-  try {
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
     let body = "";
 
     req.on("data", (chunk) => {
       body += chunk;
 
       if (body.length > 5 * 1024 * 1024) {
+        reject(new Error("Request body is too large."));
         req.destroy();
       }
     });
 
-    req.on("end", async () => {
+    req.on("end", () => {
       try {
-        const response = await fetch(`${OLLAMA_URL}${endpoint}`, {
-          method: req.method,
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: req.method === "POST" ? body : undefined
-        });
-
-        const contentType =
-          response.headers.get("content-type") ||
-          "application/json; charset=utf-8";
-
-        res.writeHead(response.status, {
-          "Content-Type": contentType
-        });
-
-        if (!response.body) {
-          res.end();
-          return;
-        }
-
-        // Forward Ollama's response stream so chat can stream.
-        const reader = response.body.getReader();
-
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) break;
-
-          res.write(value);
-        }
-
-        res.end();
-      } catch (error) {
-        console.error("Ollama proxy error:", error.message);
-
-        sendJson(res, 502, {
-          error: "Could not connect to the AI server.",
-          details: error.message
-        });
+        resolve(JSON.parse(body || "{}"));
+      } catch {
+        reject(new Error("Invalid JSON request."));
       }
     });
-  } catch (error) {
+
+    req.on("error", reject);
+  });
+}
+
+async function handleChat(req, res) {
+  if (!GEMINI_API_KEY) {
     sendJson(res, 500, {
-      error: "Server error",
-      details: error.message
+      error: "GEMINI_API_KEY is not configured on the server."
     });
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+
+    if (!Array.isArray(body.messages)) {
+      sendJson(res, 400, {
+        error: "The request must include a messages array."
+      });
+      return;
+    }
+
+    let systemText = "";
+
+    const contents = body.messages
+      .filter((message) => {
+        return message && typeof message.content === "string";
+      })
+      .map((message) => {
+        const role =
+          message.role === "assistant" ? "model" : "user";
+
+        if (message.role === "system") {
+          systemText += message.content + "\n";
+          return null;
+        }
+
+        return {
+          role,
+          parts: [{ text: message.content }]
+        };
+      })
+      .filter(Boolean);
+
+    if (contents.length === 0) {
+      sendJson(res, 400, {
+        error: "No chat messages were provided."
+      });
+      return;
+    }
+
+    const geminiRequest = {
+      contents,
+      generationConfig: {
+        temperature: 0.7
+      }
+    };
+
+    if (systemText.trim()) {
+      geminiRequest.systemInstruction = {
+        parts: [{ text: systemText.trim() }]
+      };
+    }
+
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY
+        },
+        body: JSON.stringify(geminiRequest)
+      }
+    );
+
+    const result = await geminiResponse.json();
+
+    if (!geminiResponse.ok) {
+      console.error("Gemini API error:", result);
+
+      sendJson(res, geminiResponse.status, {
+        error:
+          result.error?.message ||
+          "Gemini could not process the request."
+      });
+      return;
+    }
+
+    const answer = result.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text || "")
+      .join("");
+
+    if (!answer) {
+      sendJson(res, 502, {
+        error: "Gemini returned an empty response."
+      });
+      return;
+    }
+
+    const ollamaStyleResponse = {
+      message: {
+        role: "assistant",
+        content: answer
+      },
+      done: true
+    };
+
+    // If the frontend requests streaming, send one
+    // Ollama-compatible NDJSON response line.
+    if (body.stream !== false) {
+      res.writeHead(200, {
+        "Content-Type": "application/x-ndjson; charset=utf-8"
+      });
+
+      res.end(JSON.stringify(ollamaStyleResponse) + "\n");
+      return;
+    }
+
+    sendJson(res, 200, ollamaStyleResponse);
+  } catch (error) {
+    console.error("Chat server error:", error.message);
+
+    if (!res.headersSent) {
+      sendJson(res, 500, {
+        error: "The server could not process your chat request."
+      });
+    } else {
+      res.end();
+    }
   }
 }
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  let url;
 
-  // Allow browser preflight requests.
+  try {
+    url = new URL(req.url, `http://${req.headers.host}`);
+  } catch {
+    sendJson(res, 400, { error: "Invalid URL" });
+    return;
+  }
+
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -108,20 +204,32 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Ollama model list
+  // Provide a Gemini model list in the format
+  // expected by the existing Nebula frontend.
   if (url.pathname === "/api/models" && req.method === "GET") {
-    proxyToOllama(req, res, "/api/tags");
+    sendJson(res, 200, {
+      models: [
+        { name: GEMINI_MODEL }
+      ]
+    });
     return;
   }
 
-  // Ollama chat
+  // Gemini chat endpoint
   if (url.pathname === "/api/chat" && req.method === "POST") {
-    proxyToOllama(req, res, "/api/chat");
+    handleChat(req, res);
     return;
   }
 
   // Serve website files
-  let requestedPath = decodeURIComponent(url.pathname);
+  let requestedPath;
+
+  try {
+    requestedPath = decodeURIComponent(url.pathname);
+  } catch {
+    sendJson(res, 400, { error: "Invalid file path" });
+    return;
+  }
 
   if (requestedPath === "/") {
     requestedPath = "/index.html";
@@ -133,8 +241,10 @@ const server = http.createServer((req, res) => {
   );
 
   // Prevent requests from escaping the public directory.
-  if (!filePath.startsWith(PUBLIC_DIR + path.sep) &&
-      filePath !== path.join(PUBLIC_DIR, "index.html")) {
+  if (
+    !filePath.startsWith(PUBLIC_DIR + path.sep) &&
+    filePath !== path.join(PUBLIC_DIR, "index.html")
+  ) {
     sendJson(res, 403, { error: "Forbidden" });
     return;
   }
@@ -144,7 +254,9 @@ const server = http.createServer((req, res) => {
       if (error.code === "ENOENT") {
         sendJson(res, 404, { error: "File not found" });
       } else {
-        sendJson(res, 500, { error: "Could not read file" });
+        sendJson(res, 500, {
+          error: "Could not read file"
+        });
       }
 
       return;
